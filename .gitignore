@@ -1,0 +1,21 @@
+# Virtual environments
+venv/
+film_model/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# TensorFlow checkpoints / models
+*.pb
+*.ckpt
+checkpoint/
+
+# Video/output files
+uploads/
+outputs/
+*.mp4
+
+
+.vscode/
+.DS_Store
