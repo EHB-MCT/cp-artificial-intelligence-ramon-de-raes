@@ -17,105 +17,75 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-# Load the FILM model
-def load_film_model(model_path='film_model/saved_model'):
-    print("[DEBUG] Loading FILM model...")
+# Load FILM model once
+def load_film_model(path='film_model/saved_model'):
+    print(f"[DEBUG] Loading FILM model from {path}")
+    model = tf.saved_model.load(path)
+    print("[DEBUG] Model loaded successfully")
+    return model
+
+film_model = load_film_model()
+
+# Single-frame interpolation with FILM + fallback on error or invalid output
+def interpolate_single(model, a, b, t=0.5, idx=0):
+    print(f"[DEBUG] interpolate_single idx={idx}, t={t}")
+    # Convert to float32 [0,1]
+    x0 = tf.expand_dims(tf.convert_to_tensor(a, tf.float32) / 255.0, 0)
+    x1 = tf.expand_dims(tf.convert_to_tensor(b, tf.float32) / 255.0, 0)
+    time_tensor = tf.constant([[t]], tf.float32)
+    inputs = {'time': time_tensor, 'x0': x0, 'x1': x1}
     try:
-        model = tf.saved_model.load(model_path)
-        print("[DEBUG] Model loaded successfully.")
-        return model
+        out = model(inputs, training=False)
     except Exception as e:
-        print(f"[ERROR] Failed to load model: {e}")
-        return None
+        print(f"[ERROR] Model call failed at idx={idx}, t={t}: {e} - using fallback average")
+        avg = ((a.astype(np.float32) + b.astype(np.float32)) / 2.0)
+        return avg.clip(0, 255).astype(np.uint8)
 
-# Use FILM to interpolate between two frames
-def interpolate_frames(model, f1, f2, num_intermediate):
-    # Normaliseer inputframes naar [0.0, 1.0]
-    image0 = tf.convert_to_tensor(f1[np.newaxis, ...] / 255.0, dtype=tf.float32)
-    image1 = tf.convert_to_tensor(f2[np.newaxis, ...] / 255.0, dtype=tf.float32)
+    # Select the image tensor from outputs\    
+    frame_tensor = None
+    if isinstance(out, dict):
+        for key, val in out.items():
+            if isinstance(val, tf.Tensor) and val.shape.ndims == 4:
+                frame_tensor = val
+                print(f"[DEBUG] Selected tensor key: {key}")
+                break
+    elif isinstance(out, tf.Tensor) and out.shape.ndims == 4:
+        frame_tensor = out
+    if frame_tensor is None:
+        print(f"[ERROR] No valid tensor found in model output at idx={idx}, t={t} - using fallback average")
+        avg = ((a.astype(np.float32) + b.astype(np.float32)) / 2.0)
+        return avg.clip(0, 255).astype(np.uint8)
 
-    times = [(i + 1) / (num_intermediate + 1) for i in range(num_intermediate)]
-    interpolated_frames = []
+    # Convert tensor to numpy and denormalize
+    try:
+        frame_np = frame_tensor.numpy()[0]
+        frame_np = np.clip(frame_np * 255.0, 0, 255).astype(np.uint8)
+        # Validate output
+        if not np.isfinite(frame_np).all():
+            raise ValueError("Non-finite values in frame")
+        return frame_np
+    except Exception as e:
+        print(f"[ERROR] Processing output failed at idx={idx}, t={t}: {e} - using fallback average")
+        avg = ((a.astype(np.float32) + b.astype(np.float32)) / 2.0)
+        return avg.clip(0, 255).astype(np.uint8)
 
-    for t in times:
-        t_tensor = tf.convert_to_tensor([[t]], dtype=tf.float32)
-        try:
-            prediction = model({'x0': image0, 'x1': image1, 'time': t_tensor}, training=False)
-            interpolated_tensor = prediction['image'] if isinstance(prediction, dict) else prediction
-            interpolated_np = interpolated_tensor.numpy()[0]  # shape: (H, W, 3)
-
-            # Denormaliseer naar [0–255] en zet om naar uint8
-            interpolated_np = np.clip(interpolated_np * 255.0, 0, 255).astype(np.uint8)
-            interpolated_frames.append(interpolated_np)
-
-        except Exception as e:
-            print(f"[ERROR] Interpolation failed at t={t:.2f}: {e}")
-
-    return interpolated_frames
-
-
-# Process video using FILM interpolation
-def process_video(input_path, factor=2):
-    print("[INFO] Starting video processing...")
-    start_total = time.time()
-
-    model = load_film_model()
-    if model is None:
-        raise RuntimeError("FILM model could not be loaded.")
-
-    cap = cv2.VideoCapture(input_path)
-    if not cap.isOpened():
-        raise ValueError(f"[ERROR] Cannot open video file: {input_path}")
-
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frames = []
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frames.append(frame_rgb)
-
-    cap.release()
-    print(f"[INFO] Loaded {len(frames)} frames.")
-
-    new_frames = []
-    num_intermediate = factor - 1
-
-    for i in range(len(frames) - 1):
-        f1, f2 = frames[i], frames[i + 1]
-        new_frames.append(f1)
-        mids = interpolate_frames(model, f1, f2, num_intermediate)
-        new_frames.extend(mids)
-    new_frames.append(frames[-1])
-
-    height, width, _ = new_frames[0].shape
-    out_filename = os.path.splitext(os.path.basename(input_path))[0] + f'_film_{factor}x.mp4'
-    out_path = os.path.join(app.config['OUTPUT_FOLDER'], out_filename)
-
-    writer = cv2.VideoWriter(
-        out_path,
-        cv2.VideoWriter_fourcc(*'mp4v'),
-        fps,
-        (width, height)
-    )
-
-    for frame in new_frames:
-        frame_bgr = cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_RGB2BGR)
-        writer.write(frame_bgr)
-    writer.release()
-
-    print(f"[INFO] Processing complete. Saved to {out_path}")
-    print(f"[INFO] Total time: {time.time() - start_total:.2f} seconds")
-    return out_path
-
+# Generate multiple intermediates between two frames
+def interpolate_frames(model, a, b, n):
+    print(f"[DEBUG] interpolate_frames called n={n}")
+    mids = []
+    for i in range(1, n + 1):
+        t = i / (n + 1)
+        print(f"[DEBUG] Generating interp {i}/{n} at t={t}")
+        mid = interpolate_single(model, a, b, t, idx=i)
+        mids.append(mid)
+    return mids
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
         vid = request.files.get('video')
         factor = int(request.form.get('factor', 2))
-        if vid:
+        if vid and factor in [2, 4, 8]:
             in_path = os.path.join(app.config['UPLOAD_FOLDER'], vid.filename)
             vid.save(in_path)
             out_path = process_video(in_path, factor)
@@ -124,8 +94,53 @@ def index():
 
 @app.route('/download/<filename>')
 def download(filename):
-    path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
-    return send_file(path, as_attachment=True)
+    return send_file(os.path.join(app.config['OUTPUT_FOLDER'], filename), as_attachment=True)
+
+# Main processing: read, interpolate, and write slow-motion video
+def process_video(input_path, factor):
+    print(f"[INFO] process_video factor={factor}, input={input_path}")
+    cap = cv2.VideoCapture(input_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frames = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        # Convert BGR->RGB for model
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frames.append(rgb)
+    cap.release()
+    print(f"[INFO] Loaded {len(frames)} frames")
+
+    intermediates = factor - 1
+    new_frames = []
+    for i in range(len(frames) - 1):
+        a, b = frames[i], frames[i + 1]
+        new_frames.append(a)
+        mids = interpolate_frames(film_model, a, b, intermediates)
+        new_frames.extend(mids)
+    new_frames.append(frames[-1])
+    print(f"[INFO] Total output frames: {len(new_frames)}")
+
+    # Write with original FPS for slow motion
+    h, w = new_frames[0].shape[:2]
+    out_name = os.path.splitext(os.path.basename(input_path))[0] + f'_slowmo_{factor}x.mp4'
+    out_path = os.path.join(app.config['OUTPUT_FOLDER'], out_name)
+    writer = cv2.VideoWriter(
+        out_path,
+        cv2.VideoWriter_fourcc(*'mp4v'),
+        fps,
+        (w, h)
+    )
+    for idx, frame in enumerate(new_frames, 1):
+        # Convert RGB->BGR for writing
+        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        writer.write(bgr)
+        if idx % 50 == 0:
+            print(f"[DEBUG] Written {idx}/{len(new_frames)}")
+    writer.release()
+    print(f"[INFO] Saved output to {out_path}")
+    return out_path
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
