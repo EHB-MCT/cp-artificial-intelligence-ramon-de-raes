@@ -17,55 +17,108 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-# Load the FILM model (custom logic may vary depending on how the model is saved)
+# Load the FILM model
 def load_film_model(model_path='film_model/saved_model'):
-    print("[DEBUG] Loading model...")
+    print("[DEBUG] Loading FILM model...")
     try:
         model = tf.saved_model.load(model_path)
         print("[DEBUG] Model loaded successfully.")
         return model
     except Exception as e:
-        print(f"[ERROR] Error loading model: {e}")
+        print(f"[ERROR] Failed to load model: {e}")
         return None
 
-# Interpolate frames: given two frames, generate one in-between
-def interpolate_frame(model, frame1, frame2):
-    print("[DEBUG] Begin interpolatie van een framepaar")
+# Use FILM to interpolate between two frames
+def interpolate_frames(model, f1, f2, num_intermediate):
+    # Normaliseer inputframes naar [0.0, 1.0]
+    image0 = tf.convert_to_tensor(f1[np.newaxis, ...] / 255.0, dtype=tf.float32)
+    image1 = tf.convert_to_tensor(f2[np.newaxis, ...] / 255.0, dtype=tf.float32)
 
-    # Verwijder de conversie naar tensor als een test zonder model
-    x0 = frame1.astype(np.float32)  # Directe numpy array
-    x1 = frame2.astype(np.float32)  # Directe numpy array
+    times = [(i + 1) / (num_intermediate + 1) for i in range(num_intermediate)]
+    interpolated_frames = []
 
-    print(f"[DEBUG] Shape van x0: {x0.shape}, x1: {x1.shape}")
+    for t in times:
+        t_tensor = tf.convert_to_tensor([[t]], dtype=tf.float32)
+        try:
+            prediction = model({'x0': image0, 'x1': image1, 'time': t_tensor}, training=False)
+            interpolated_tensor = prediction['image'] if isinstance(prediction, dict) else prediction
+            interpolated_np = interpolated_tensor.numpy()[0]  # shape: (H, W, 3)
 
-    # Testen zonder het model (dupliceren frames voor eenvoud)
-    mid_frame = (x0 + x1) // 2  # Gemiddelde van de twee frames
+            # Denormaliseer naar [0–255] en zet om naar uint8
+            interpolated_np = np.clip(interpolated_np * 255.0, 0, 255).astype(np.uint8)
+            interpolated_frames.append(interpolated_np)
 
-    print("[DEBUG] Test interpolatie zonder model. Gebruik gemiddelde van frames.")
-    return mid_frame.astype(np.uint8)
+        except Exception as e:
+            print(f"[ERROR] Interpolation failed at t={t:.2f}: {e}")
 
-# Functie voor het instellen van een timeout
-def run_with_timeout(model, inputs, timeout=60):
-    start_time = time.time()
-    try:
-        result = model(inputs, training=False)
-        elapsed_time = time.time() - start_time
-        if elapsed_time > timeout:
-            raise TimeoutError(f"Model execution took too long: {elapsed_time:.2f}s")
-        print(f"[DEBUG] Model executed in {elapsed_time:.2f}s")
-        return result
-    except Exception as e:
-        print(f"[ERROR] Timeout of fout bij modeluitvoering: {e}")
-        return None
+    return interpolated_frames
+
+
+# Process video using FILM interpolation
+def process_video(input_path, factor=2):
+    print("[INFO] Starting video processing...")
+    start_total = time.time()
+
+    model = load_film_model()
+    if model is None:
+        raise RuntimeError("FILM model could not be loaded.")
+
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise ValueError(f"[ERROR] Cannot open video file: {input_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frames = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frames.append(frame_rgb)
+
+    cap.release()
+    print(f"[INFO] Loaded {len(frames)} frames.")
+
+    new_frames = []
+    num_intermediate = factor - 1
+
+    for i in range(len(frames) - 1):
+        f1, f2 = frames[i], frames[i + 1]
+        new_frames.append(f1)
+        mids = interpolate_frames(model, f1, f2, num_intermediate)
+        new_frames.extend(mids)
+    new_frames.append(frames[-1])
+
+    height, width, _ = new_frames[0].shape
+    out_filename = os.path.splitext(os.path.basename(input_path))[0] + f'_film_{factor}x.mp4'
+    out_path = os.path.join(app.config['OUTPUT_FOLDER'], out_filename)
+
+    writer = cv2.VideoWriter(
+        out_path,
+        cv2.VideoWriter_fourcc(*'mp4v'),
+        fps,
+        (width, height)
+    )
+
+    for frame in new_frames:
+        frame_bgr = cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_RGB2BGR)
+        writer.write(frame_bgr)
+    writer.release()
+
+    print(f"[INFO] Processing complete. Saved to {out_path}")
+    print(f"[INFO] Total time: {time.time() - start_total:.2f} seconds")
+    return out_path
+
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
         vid = request.files.get('video')
+        factor = int(request.form.get('factor', 2))
         if vid:
             in_path = os.path.join(app.config['UPLOAD_FOLDER'], vid.filename)
             vid.save(in_path)
-            out_path = process_video(in_path)
+            out_path = process_video(in_path, factor)
             return redirect(url_for('download', filename=os.path.basename(out_path)))
     return render_template('index.html')
 
@@ -73,56 +126,6 @@ def index():
 def download(filename):
     path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
     return send_file(path, as_attachment=True)
-
-# Main processing: split frames, interpolate, reassemble
-def process_video(input_path):
-    print("[INFO] Start video processing")
-    start_total = time.time()
-
-    print("[INFO] Loading FILM model...")
-    model = load_film_model()
-
-    print(f"[INFO] Reading video: {input_path}")
-    cap = cv2.VideoCapture(input_path)
-    if not cap.isOpened():
-        raise ValueError(f"[ERROR] Cannot open video file: {input_path}")
-    
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frames = []
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(frame)
-    cap.release()
-    print(f"[INFO] Loaded {len(frames)} frames.")
-
-    print("[INFO] Interpolating frames...")
-    new_frames = []
-    for i in range(len(frames) - 1):
-        f1, f2 = frames[i], frames[i + 1]
-        try:
-            mid = interpolate_frame(model, f1, f2)
-            new_frames.extend([f1, mid])
-        except Exception as e:
-            print(f"[ERROR] Failed to interpolate frame pair {i}-{i+1}: {e}")
-            new_frames.extend([f1, f2])  # fallback: no interpolation
-
-    new_frames.append(frames[-1])
-
-    height, width, _ = new_frames[0].shape
-    out_filename = os.path.splitext(os.path.basename(input_path))[0] + '_interp.mp4'
-    out_path = os.path.join(app.config['OUTPUT_FOLDER'], out_filename)
-
-    print(f"[INFO] Writing interpolated video to: {out_path}")
-    writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*'mp4v'), fps * 2, (width, height))
-    for frame in new_frames:
-        writer.write(frame)
-    writer.release()
-
-    total_time = time.time() - start_total
-    print(f"[INFO] Done. Total processing time: {total_time:.2f} seconds")
-    return out_path
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
