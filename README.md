@@ -12,22 +12,21 @@ python -m venv venv
 
 2. Activeer de virtuele omgeving
 
-    - macOS/Linux:
+   - macOS/Linux:
 
-    venv/bin/activate
+   venv/bin/activate
 
-    - Windows:
+   - Windows:
 
-    venv\Scripts\activate
+   venv\Scripts\activate
 
 3. Installeer de vereiste dependencies
 
 pip install -r requirements.txt
 
-4. Download het FILM-model
+4. modelbestand toevoegen
+   download de zip file van het FILM-model en pak deze uit in de hoofdmap van het project, zodat er een map film_model/ ontstaat met daarin de map saved_model/ .
 
-python download_model.py
-
-5. Start de Flask-applicatie
+5. Start de applicatie
 
 python app.py
