@@ -1,86 +1,92 @@
 <!-- File: templates/index.html -->
 <!DOCTYPE html>
 <html lang="nl">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Slow Motion Frame Interpolatie</title>
-  <style>
-     body {
-    font-family: Arial, sans-serif;
-    background: #f4f6f9;
-    color: #333;
-    padding: 2rem;
-    margin: 0;
-  }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmoothMotion AI</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f4f6f9;
+        color: #333;
+        padding: 2rem;
+        margin: 0;
+      }
 
-  h1 {
-    text-align: center;
-    color: #222;
-  }
+      h1 {
+        text-align: center;
+        color: #222;
+        font-size: 40px;
+      }
 
-  form {
-    background: white;
-    max-width: 500px;
-    margin: 2rem auto;
-    padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  }
+      h2 {
+        text-align: center;
+        color: #0056b3;
+      }
 
-  label {
-    display: block;
-    margin-top: 1rem;
-    font-weight: bold;
-  }
+      form {
+        background: white;
+        max-width: 500px;
+        margin: 2rem auto;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
 
-  input[type="file"],
-  select {
-    width: 100%;
-    padding: 0.5rem;
-    margin-top: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 1rem;
-  }
+      label {
+        display: block;
+        margin-top: 1rem;
+        font-weight: bold;
+      }
 
-  button {
-    margin-top: 1.5rem;
-    padding: 0.75rem;
-    width: 100%;
-    background-color: #007BFF;
-    color: white;
-    border: none;
-    font-size: 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.3s;
-  }
+      input[type="file"],
+      select {
+        width: 100%;
+        padding: 0.5rem;
+        margin-top: 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 1rem;
+      }
 
-  button:hover {
-    background-color: #0056b3;
-  }
-  </style>
-</head>
-<body>
-  <h1>Upload je video voor slow motion</h1>
-  
-  <form method="POST" enctype="multipart/form-data">
-    <label for="video">Video uploaden:</label><br>
-    <input type="file" name="video" accept="video/*" required /><br><br>
+      button {
+        margin-top: 1.5rem;
+        padding: 0.75rem;
+        width: 100%;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        font-size: 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
 
-    <label for="factor">Interpolatiefactor (slow motion niveau):</label><br>
-    <select name="factor" required>
-      <option value="2">2x (0.5× langzamer)</option>
-      <option value="4">4x (0.25× langzamer)</option>
-      <option value="8">8x (0.125× langzamer)</option>
-    </select><br><br>
+      button:hover {
+        background-color: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>SmoothMotion AI</h1>
+    <h2>Turn your videos into smooth slow motion</h2>
+    <form method="POST" enctype="multipart/form-data">
+      <label for="video">Upload video:</label><br />
+      <input type="file" name="video" accept="video/*" required /><br /><br />
 
-    <button type="submit">Verwerk video</button>
-  </form>
+      <label for="factor">Slow Motion Factor</label><br />
+      <select name="factor" required>
+        <option value="2">2x</option>
+        <option value="4">4x</option>
+        <option value="8">8x</option></select
+      ><br /><br />
 
-  {% if request.method == 'POST' %}
+      <button type="submit">Verwerk video</button>
+    </form>
+
+    {% if request.method == 'POST' %}
     <p>Verwerken… even geduld.</p>
-  {% endif %}
-</body>
+    {% endif %}
+  </body>
 </html>
