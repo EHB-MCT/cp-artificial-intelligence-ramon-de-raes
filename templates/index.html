@@ -1,4 +1,3 @@
-<!-- File: templates/index.html -->
 <!DOCTYPE html>
 <html lang="nl">
   <head>
@@ -66,11 +65,38 @@
       button:hover {
         background-color: #0056b3;
       }
+
+      /* Progress bar styling */
+      #progress-container {
+        display: none;
+        max-width: 500px;
+        margin: 1rem auto;
+      }
+
+      #progress-bar-wrapper {
+        background: #ddd;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      #progress-bar {
+        height: 20px;
+        width: 0%;
+        background: #007bff;
+        transition: width 0.3s;
+      }
+
+      #progress-text {
+        text-align: center;
+        margin: 0.5rem 0;
+      }
     </style>
   </head>
   <body>
     <h1>SmoothMotion AI</h1>
     <h2>Turn your videos into smooth slow motion</h2>
+
+
     <form method="POST" enctype="multipart/form-data">
       <label for="video">Upload video:</label><br />
       <input type="file" name="video" accept="video/*" required /><br /><br />
@@ -79,14 +105,46 @@
       <select name="factor" required>
         <option value="2">2x</option>
         <option value="4">4x</option>
-        <option value="8">8x</option></select
-      ><br /><br />
+        <option value="8">8x</option>
+      </select><br /><br />
+      <div id="progress-container">
+      <div id="progress-bar-wrapper">
+        <div id="progress-bar"></div>
+      </div>
+      <p id="progress-text">0%</p>
+    </div>
 
       <button type="submit">Verwerk video</button>
     </form>
 
-    {% if request.method == 'POST' %}
-    <p>Verwerken… even geduld.</p>
-    {% endif %}
+    <script>
+      const form = document.querySelector("form");
+      const progressContainer = document.getElementById("progress-container");
+      const progressBar = document.getElementById("progress-bar");
+      const progressText = document.getElementById("progress-text");
+
+      form.addEventListener("submit", () => {
+        progressContainer.style.display = "block";
+        pollProgress();
+      });
+
+      function pollProgress() {
+        fetch("/progress")
+          .then((res) => res.json())
+          .then((data) => {
+            const percent = data.value;
+            progressBar.style.width = percent + "%";
+            progressText.textContent = percent + "%";
+            if (percent < 100) {
+              setTimeout(pollProgress, 500);
+            } else {
+              // Verberg de progress bar na korte vertraging
+              setTimeout(() => {
+                progressContainer.style.display = "none";
+              }, 1000);
+            }
+          });
+      }
+    </script>
   </body>
 </html>
