@@ -4,29 +4,40 @@ Dit project maakt gebruik van het **FILM-model** (Frame Interpolation for Large 
 
 Je kunt een video uploaden via een eenvoudige webinterface, kiezen hoeveel keer je de slow motion wilt vertragen (2x, 4x, 8x), en het resultaat downloaden.
 
-## project starten
+## ⚠️ Belangrijk
 
-1. Maak een virtuele omgeving aan (optioneel maar aanbevolen)
+- **film_model/** moet handmatig toegevoegd worden (niet in GitHub).
+- Werkt op **CPU** (langzamer). Werkt enkel op **GPU** als CUDA/cuDNN beschikbaar zijn.
 
-python -m venv venv
+## 🚀 Project starten
 
-2. Activeer de virtuele omgeving
+**Vereiste:** Python **3.9**
 
-   - macOS/Linux:
+1. **Maak een virtuele omgeving aan** (optioneel maar aanbevolen)
 
-   venv/bin/activate
+   python -m venv venv
 
-   - Windows:
+2. **Activeer de virtuele omgeving**
+
+   _macOS/Linux:_
+
+   source venv/bin/activate
+
+   _Windows:_
 
    venv\Scripts\activate
 
-3. Installeer de vereiste dependencies
+3. **Installeer de dependencies**
 
-pip install -r requirements.txt
+   pip install -r requirements.txt
 
-4. modelbestand toevoegen
-   download de zip file van het FILM-model en pak deze uit in de hoofdmap van het project, zodat er een map film_model/ ontstaat met daarin de map saved_model/ .
+4. **Modelbestand toevoegen**
 
-5. Start de applicatie
+   - Download de zipfile van het FILM-model.
+   - Extract deze in de hoofdmap van het project, zodat er een map `film_model/` ontstaat met daarin `saved_model/`.
 
-python app.py
+5. **Start de applicatie**
+
+   python app.py
+
+6. Open je browser en ga naar: [http://localhost:5000]
